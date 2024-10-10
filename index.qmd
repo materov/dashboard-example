@@ -1,0 +1,582 @@
+---
+title: "Quarto Dashboards"
+author: "[пример]"
+
+theme: [lumen, theme.scss]
+# sandstone
+#  light: [simplex, theme.scss]
+#  dark:  [sandstone, theme.scss]
+      
+mermaid:
+  theme: forest
+
+lang: ru
+
+format:
+  dashboard: 
+    logo: logo.jpg
+    favicon: logo.jpg
+    orientation: columns
+    nav-buttons:
+      - icon: telegram
+        href: https://t.me/naukaidannye
+        text: Telegram
+---
+    
+# Apple
+
+## Column {width=70%}
+
+```{r}
+#| title: Котировки акций **Apple** за последний год
+
+#| warning: false
+#| message: false
+
+library(magrittr)
+library(tidyverse)
+library(highcharter)
+library(quantmod)
+
+AAPL <- getSymbols("AAPL", 
+                  from = Sys.Date() - lubridate::years(1), 
+                  auto.assign = FALSE)
+
+AAPL <- AAPL %>% na.omit()
+
+AAPL.ave <- SMA(Cl(AAPL), n = 5)
+
+# https://stackoverflow.com/questions/25266392/how-to-set-highchart-global-options-in-r
+lang <- getOption("highcharter.lang")
+
+lang$contextButtonTitle <- "Контекстное меню"
+lang$decimalPoint <- ","
+lang$downloadCSV <- "Загрузить CSV"
+lang$downloadJPEG <- "Загрузить JPEG"
+lang$downloadPDF <- "Загрузить PDF"
+lang$downloadPNG <- "Загрузить PNG"
+lang$downloadSVG <- "Загрузить SVG"
+lang$downloadXLS <- "Загрузить XLS"
+lang$drillUpText <- "◁ Назад к {series.name}"
+lang$exitFullscreen <- "Выйти из полноэкранного режима"
+lang$exportData$annotationHeader <- "Аннотации"
+lang$exportData$categoryDatetimeHeader <- "Дата и время"
+lang$exportData$categoryHeader <- "Категория"
+lang$hideData <- "Скрыть данные"
+lang$loading <- "Загрузить..."
+lang$months <- c("Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь")
+lang$noData <- "Нет данных для отображения"
+lang$printChart <- "Распечатать график"
+lang$resetZoom <- "Сброс масштаба"
+lang$resetZoomTitle <- "Сброс уровня масштабирования до 1:1"
+lang$shortMonths <- c("Янв", "Фев", "Мар", "Апр", "Май", "Июн", "Июл", "Авг", "Сент", "Окт", "Ноя", "Дек")
+lang$shortWeekdays <- c("Сб", "Вс", "Пн", "Вт", "Ср", "Чт", "Пт")
+lang$viewData <- "Просмотр таблицы данных"
+lang$viewFullscreen <- "Просмотр в полноэкранном режиме"
+lang$weekdays <- c("Воскресение", "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота" )
+
+options(highcharter.lang = lang)
+
+# https://itecnote.com/tecnote/r-convert-between-zoo-object-and-data-frame-results-inconsistent-for-different-numbers-of-columns/
+zooToDf <- function(z) {
+  df <- as.data.frame(z) 
+  df$Date <- time(z)   #create a Date column
+  rownames(df) <- NULL #so row names not filled with dates
+  df <- df[,c(ncol(df), 1:(ncol(df)-1))] #reorder columns so Date first
+  return(df)
+}
+AAPL_df <- zooToDf(AAPL) %>% as_tibble()
+
+data_flags <- tibble(
+  date = as.Date(c("2023-06-05", "2023-09-12", "2023-10-30")),
+  title = c("WWDC 2023", "Apple event '23", "Scary fast event"),
+  text = c("Apple Vision Pro", "iPhone 15", "M3 chips")
+)
+
+highchart(type = "stock") %>% 
+  #hc_add_theme(hc_theme_bloom()) |>
+  hc_add_theme(hc_theme_hcrt()) |>
+  hc_add_series(AAPL, 
+                id = 1,
+                yAxis = 0, 
+                name  = "AAPL") %>% 
+  hc_add_series(AAPL.ave, 
+                yAxis = 0, 
+                name  = "скользящее среднее AAPL",
+                color = hex_to_rgba("blue", 0.6)) %>% 
+  hc_tooltip(valueDecimals = 2) %>% 
+  hc_yAxis(labels = list(format = "${value}")) |>
+  #hc_title(text = "Котировки Apple за последний год") %>% 
+    hc_exporting(
+    enabled = TRUE
+  ) |> 
+  hc_add_series(
+    data_flags, 
+    hcaes(x = date),
+    type = "flags", 
+    onSeries = 1
+    )
+```
+
+## Column {width=30%}
+
+```{r}
+#| title: Усредненные значения
+#| warning: false
+#| message: false
+
+library(reactable)
+
+AAPL_df <-
+AAPL_df |>
+  mutate(month = str_to_title(lubridate::month(Date, label = TRUE)),
+         year = lubridate::year(Date)) |>
+  mutate(year = str_remove(year, "\\d{2}(?=\\d{2}$)")) |>
+  mutate(month_year = str_c(month, year, sep = " '"))
+
+AAPL_by_month <-
+AAPL_df |>
+  mutate(month = lubridate::month(Date, label = TRUE)) |>
+  group_by(month_year) |>
+  summarise(Open  = round(mean(AAPL.Open,  na.rm = TRUE), 2),
+            Close = round(mean(AAPL.Close, na.rm = TRUE), 2)) |>
+  rename(`Месяц` = month_year,
+         `Открытие` = Open,
+         `Закрытие` = Close)
+
+AAPL_by_month$Месяц = ordered(AAPL_by_month$Месяц,
+                             labels = c("Ноя '22", "Дек '22", "Янв '23", "Фев '23",
+                                        "Мар '23", "Апр '23", "Май '23", "Июн '23",
+                                        "Июл '23", "Авг '23", "Сен '23", "Окт '23",
+                                        "Ноя '23"),
+                             levels = c("Ноя '22", "Дек '22", "Янв '23", "Фев '23",
+                                        "Мар '23", "Апр '23", "Май '23", "Июн '23",
+                                        "Июл '23", "Авг '23", "Сен '23", "Окт '23",
+                                        "Ноя '23"))         
+
+AAPL_by_month <- arrange(AAPL_by_month, Месяц)
+
+reactable(AAPL_by_month, 
+  theme = reactableTheme(
+    headerStyle = list(
+      "&:hover[aria-sort]" = list(background = "hsl(0, 0%, 96%)"),
+      "&[aria-sort='ascending'], &[aria-sort='descending']" = list(background = "hsl(0, 0%, 96%)"),
+      borderColor = "#555"
+    )
+  ),
+  defaultPageSize = 13,
+  sortable = FALSE,
+  highlight = TRUE,
+  columns = list(
+    `Открытие`  = colDef(format = colFormat(prefix = "$"),
+    style = function(value) {
+      if (value == max(AAPL_by_month$`Открытие`)) {
+        color <- "#008000"
+        fontWeight = "bold"
+      } else {
+        color <- "black"
+        fontWeight = "normal"
+      }
+      list(color = color, fontWeight = fontWeight)
+    }
+    ),
+    `Закрытие`  = colDef(format = colFormat(prefix = "$"),
+    style = function(value) {
+      if (value == min(AAPL_by_month$`Закрытие`)) {
+        color <- "red"
+        fontWeight = "bold"
+      } else {
+        color <- "black"
+        fontWeight = "normal"
+      }
+      list(color = color, fontWeight = fontWeight)
+    }
+    ),
+    `Месяц` = colDef(
+      sticky = "left",
+      style = list(borderRight = "1px solid #eee"),
+      headerStyle = list(borderRight = "1px solid #eee")
+    )
+  )
+)
+```
+
+# Amazon
+
+## Column {width=70%}
+
+```{r}
+#| title: Котировки акций **Amazon** за последний год
+
+#| warning: false
+#| message: false
+
+AMZN <- getSymbols("AMZN", 
+                  from = Sys.Date() - lubridate::years(1), 
+                  auto.assign = FALSE)
+
+AMZN <- AMZN %>% na.omit()
+
+AMZN.ave <- SMA(Cl(AMZN), n = 5)
+
+library(echarts4r)
+
+AMZN_dd      <- as.data.frame(AMZN)
+AMZN_dd$date <- row.names(AMZN_dd)
+
+AMZN_dd <- 
+AMZN_dd |>
+  mutate(opening  = round(AMZN.Open, 1), 
+         closing  = round(AMZN.Close, 1), 
+         low      = round(AMZN.Low, 1), 
+         high     = round(AMZN.High, 1))
+
+AMZN_dd |> 
+  e_charts(date) |> # initialise and set x
+  e_candle(opening, closing, low, high, name = "") |> 
+  #e_line(AMZN.Open, smooth = TRUE) |>  # add a line
+  #e_line(AAPL.Close, smooth = TRUE) |>  # add area
+  e_y_axis(min = 80) |>
+  e_format_y_axis(prefix = "$") |> 
+  e_axis_labels(x = "Дата") |> # axis labels
+  #e_title("US States", "Population & Income") |>  # Add title & subtitle
+  e_theme("roma") |>  # theme
+  e_legend(right = 0) |>  # move legend to the bottom
+  e_tooltip(trigger = "axis") |> # tooltip 
+  e_datazoom(x_index = c(0, 1)) 
+```
+
+## Column {width=30%}
+
+```{r}
+#| title: Усредненные значения
+AMZN_df <- zooToDf(AMZN) %>% as_tibble()
+AMZN_df <-
+AMZN_df |>
+  mutate(month = str_to_title(lubridate::month(Date, label = TRUE)),
+         year = lubridate::year(Date)) |>
+  mutate(year = str_remove(year, "\\d{2}(?=\\d{2}$)")) |>
+  mutate(month_year = str_c(month, year, sep = " '"))
+
+AMZN_by_month <-
+AMZN_df |>
+  mutate(month = lubridate::month(Date, label = TRUE)) |>
+  group_by(month_year) |>
+  summarise(Open  = round(mean(AMZN.Open,  na.rm = TRUE), 2),
+            Close = round(mean(AMZN.Close, na.rm = TRUE), 2)) |>
+  rename(`Месяц` = month_year,
+         `Открытие` = Open,
+         `Закрытие` = Close)
+
+AMZN_by_month$Месяц = ordered(AMZN_by_month$Месяц,
+                             labels = c("Ноя '22", "Дек '22", "Янв '23", "Фев '23",
+                                        "Мар '23", "Апр '23", "Май '23", "Июн '23",
+                                        "Июл '23", "Авг '23", "Сен '23", "Окт '23",
+                                        "Ноя '23"),
+                             levels = c("Ноя '22", "Дек '22", "Янв '23", "Фев '23",
+                                        "Мар '23", "Апр '23", "Май '23", "Июн '23",
+                                        "Июл '23", "Авг '23", "Сен '23", "Окт '23",
+                                        "Ноя '23"))         
+
+AMZN_by_month <- arrange(AMZN_by_month, Месяц)
+
+reactable(AMZN_by_month, 
+  theme = reactableTheme(
+    headerStyle = list(
+      "&:hover[aria-sort]" = list(background = "hsl(0, 0%, 96%)"),
+      "&[aria-sort='ascending'], &[aria-sort='descending']" = list(background = "hsl(0, 0%, 96%)"),
+      borderColor = "#555"
+    )
+  ),
+  defaultPageSize = 13,
+  sortable = FALSE,
+  highlight = TRUE,
+  columns = list(
+    `Открытие`  = colDef(format = colFormat(prefix = "$"),
+    style = function(value) {
+      if (value == max(AMZN_by_month$`Открытие`)) {
+        color <- "#008000"
+        fontWeight = "bold"
+      } else {
+        color <- "black"
+        fontWeight = "normal"
+      }
+      list(color = color, fontWeight = fontWeight)
+    }
+    ),
+    `Закрытие`  = colDef(format = colFormat(prefix = "$"),
+    style = function(value) {
+      if (value == min(AMZN_by_month$`Закрытие`)) {
+        color <- "red"
+        fontWeight = "bold"
+      } else {
+        color <- "black"
+        fontWeight = "normal"
+      }
+      list(color = color, fontWeight = fontWeight)
+    }
+    ),
+    `Месяц` = colDef(
+      sticky = "left",
+      style = list(borderRight = "1px solid #eee"),
+      headerStyle = list(borderRight = "1px solid #eee")
+    )
+  )
+)
+```
+
+# Сравнение
+
+## Column {width=70%}
+
+```{r}
+AMZN_dd_ave      <- as.data.frame(AMZN.ave)
+AMZN_dd_ave$date <- row.names(AMZN_dd_ave)
+AAPL_dd_ave      <- as.data.frame(AAPL.ave)
+AAPL_dd_ave$date <- row.names(AAPL_dd_ave)
+
+AAPL_ave_tibble <- as_tibble(AAPL_dd_ave) |>
+  na.omit() |>
+  mutate(company = "Apple")
+
+AMZN_ave_tibble <- as_tibble(AMZN_dd_ave) |>
+  na.omit() |>
+  mutate(company = "Amazon")
+
+library(apexcharter)
+AAPL_dotted <- 
+tibble(SMA = mean(AAPL_ave_tibble$SMA),
+       date = AAPL_ave_tibble$date, 
+       company = "Среднее по Apple")
+AMZN_dotted <- 
+  tibble(SMA = mean(AMZN_ave_tibble$SMA),
+         date = AMZN_ave_tibble$date, 
+         company = "Среднее по Amazon")
+
+bind_rows(AAPL_ave_tibble, 
+          AAPL_dotted, 
+          AMZN_ave_tibble,
+          AMZN_dotted) |>
+  mutate(SMA = round(SMA, 2)) |>
+  rename(`Среднее` = SMA) |>
+  mutate(date = as.Date(date)) |>
+  mutate(company = factor(company, 
+                          labels = c("Apple", 
+                                     "Среднее по Apple",
+                                     "Amazon",
+                                     "Среднее по Amazon"),
+                          levels = c("Apple", 
+                                     "Среднее по Apple",
+                                     "Amazon",
+                                     "Среднее по Amazon"))) |>
+  apex(aes(date, `Среднее`, group = company), "line") |>
+  #ax_markers(decimalsInFloat = 2) |>
+  #ax_tooltip(decimalsInFloat = 2) |>
+  ax_stroke(dashArray = c(0, 2, 0, 2)) |>
+  ax_stroke(width = c(3, 2, 3, 2)) |>
+  ax_chart(defaultLocale = "ru") |>
+  #apex(aes(date, `Среднее`), type = "line", synchronize = "sync-it") |>
+  #ax_tooltip(x = list(format = "dd MMM")) |>
+  ax_fill(opacity = 0.9, type = "solid") |>
+  #ax_stroke(width = c(3, 3)) |>
+  ax_yaxis(labels = list(formatter = format_num("~s", 
+                                                locale = "en-US",
+                                                prefix = "$"))) %>% 
+  ax_labs(
+    title = "Биржевые котировки акций Apple и Amazon",
+    subtitle = "сравнение средних значений за последний год"
+  ) %>% 
+  ax_title(
+    style = list(fontSize = "22px")
+  ) %>% 
+  ax_subtitle(
+    style = list(fontSize = "16px", color = "#BDBDBD")
+  )
+```
+
+## Column {width=30%}
+
+```{r}
+Apple_Amazon_compare <-
+bind_rows(AAPL_ave_tibble, AMZN_ave_tibble) |> 
+  rename(`Среднее` = SMA) |>
+  mutate(date = as.Date(date)) |>
+  mutate(company = factor(company, 
+                          labels = c("Apple", "Amazon"),
+                          levels = c("Apple", "Amazon"))) |>
+  pivot_wider(names_from = company, values_from = Среднее) |>
+  mutate(month = str_to_title(lubridate::month(date, label = TRUE)),
+         year = lubridate::year(date)) |>
+  mutate(year = str_remove(year, "\\d{2}(?=\\d{2}$)")) |>
+  mutate(month_year = str_c(month, year, sep = " '")) |>
+  group_by(month_year) |>
+  summarise(Apple  = round(mean(Apple,  na.rm = TRUE), 2),
+            Amazon = round(mean(Amazon, na.rm = TRUE), 2))
+
+Apple_Amazon_compare$month_year = ordered(Apple_Amazon_compare$month_year,
+                              labels = c("Ноя '22", "Дек '22", "Янв '23", "Фев '23",
+                                         "Мар '23", "Апр '23", "Май '23", "Июн '23",
+                                         "Июл '23", "Авг '23", "Сен '23", "Окт '23",
+                                         "Ноя '23"),
+                              levels = c("Ноя '22", "Дек '22", "Янв '23", "Фев '23",
+                                         "Мар '23", "Апр '23", "Май '23", "Июн '23",
+                                         "Июл '23", "Авг '23", "Сен '23", "Окт '23",
+                                         "Ноя '23"))         
+
+Apple_Amazon_compare <- arrange(Apple_Amazon_compare, month_year)
+
+Apple_Amazon_compare <- Apple_Amazon_compare %>% 
+  rename(`Месяц` = month_year)
+
+my_pal <- function(x) rgb(colorRamp(c("#54bebe", "#76c8c8", "#98d1d1", "#badbdb", "#dedad2", "#e4bcad", "#df979e", "#d7658b"))(x), maxColorValue = 255)
+
+
+reactable(
+  Apple_Amazon_compare,
+  theme = reactableTheme(
+    headerStyle = list(
+      "&:hover[aria-sort]" = list(background = "hsl(0, 0%, 96%)"),
+      "&[aria-sort='ascending'], &[aria-sort='descending']" = list(background = "hsl(0, 0%, 96%)"),
+      borderColor = "#555"
+    )
+  ),
+  defaultPageSize = 13,
+  sortable = FALSE,
+  #highlight = TRUE,
+  columns = list(
+    Apple = colDef(format = colFormat(prefix = "$"),
+                   style = function(value1) {
+      normalized <- (value1 - min(Apple_Amazon_compare$Apple)) / (max(Apple_Amazon_compare$Apple) - min(Apple_Amazon_compare$Apple))
+      color <- my_pal(normalized)
+      list(background = color)
+    }
+    ),
+    Amazon = colDef(format = colFormat(prefix = "$"),
+                    style = function(value2) {
+      normalized <- (value2 - min(Apple_Amazon_compare$Amazon)) / (max(Apple_Amazon_compare$Amazon) - min(Apple_Amazon_compare$Amazon))
+      color <- my_pal(normalized)
+      list(background = color)
+    }
+    ),
+    `Месяц` = colDef(
+      sticky = "left",
+      style = list(borderRight = "1px solid #eee"),
+      headerStyle = list(borderRight = "1px solid #eee")
+    )
+  )
+)
+```
+
+# Общие сведения
+
+## Column {width=70%}
+
+```{r}
+library(reactablefmtr)
+
+AAPL_dq <-
+AAPL_df |>
+  mutate(mean = (AAPL.Open + AAPL.Close)/2,
+         day = wday(Date, label = FALSE),
+         company = "Apple") |>
+  dplyr::select(-AAPL.Open, -AAPL.High, -AAPL.Low, -AAPL.Close, 
+                -AAPL.Volume, -AAPL.Adjusted, -month, -year, -Date)
+
+AMZN_dq <-
+AMZN_df |>
+  mutate(mean = (AMZN.Open + AMZN.Close)/2,
+         day = wday(Date, label = FALSE),
+         company = "Amazon") |>
+  dplyr::select(-AMZN.Open, -AMZN.High, -AMZN.Low, -AMZN.Close, 
+                -AMZN.Volume, -AMZN.Adjusted, -month, -year, -Date)
+
+table_reactable <-
+  bind_rows(AAPL_dq, AMZN_dq) |>
+  # группировка по необходимым категориям
+  group_by(month_year, company) |>
+  summarize(value_num = list(mean)) |>
+  mutate(
+    cols = case_when(
+      company == "Amazon"    ~ "#f5a24b",
+      company == "Apple" ~ "#af52d5",
+      TRUE ~ "grey"
+    )
+  ) |>
+  ungroup()
+
+# русификация reactable таблиц
+options(reactable.language = reactableLang(
+  pageSizeOptions   = "показано {rows} значений",
+  pageInfo          = "Диапазон: с {rowStart} по {rowEnd} из {rows} значений",
+  pagePrevious      = "назад",
+  pageNext          = "дальше",
+  searchPlaceholder = "Поиск...",
+  noData            = "Значения не найдены"
+))
+library(reactablefmtr)
+
+#unnest(table_reactable, cols = c(value_num))
+
+table_reactable$month_year = ordered(table_reactable$month_year,
+                              labels = c("Ноя '22", "Дек '22", "Янв '23", "Фев '23",
+                                         "Мар '23", "Апр '23", "Май '23", "Июн '23",
+                                         "Июл '23", "Авг '23", "Сен '23", "Окт '23",
+                                         "Ноя '23"),
+                              levels = c("Ноя '22", "Дек '22", "Янв '23", "Фев '23",
+                                         "Мар '23", "Апр '23", "Май '23", "Июн '23",
+                                         "Июл '23", "Авг '23", "Сен '23", "Окт '23",
+                                         "Ноя '23"))
+
+table_reactable <- arrange(table_reactable, month_year)
+
+reactable(
+  table_reactable,
+  defaultPageSize = 4,
+  columns = list(
+    month_year = colDef(maxWidth = 120,
+                  sortable = FALSE,
+                  sticky = "left",
+                  name = "Месяц"),
+    company = colDef(maxWidth = 180,
+                     sortable = TRUE,
+                     filterable = TRUE,
+                     name = "Корпорация"),
+    cols = colDef(show = FALSE),
+    value_num = colDef(
+      #format = colFormat(prefix = "$", separators = TRUE, digits = 1),
+      #format = colFormat(currency = "USD"),
+      sortable = FALSE,
+      #format = colFormat(prefix = "$"),
+      name = "Стоимость акций в USD в течение месяца",
+      cell = react_sparkline(
+        table_reactable,
+        #number_fmt = scales::dollar_format(prefix = '$'),
+        height = 80,
+        show_area = TRUE,
+        highlight_points = highlight_points(max = "red"),
+        labels = c("max"),
+        line_color_ref = "cols",
+        statline = "mean",
+        tooltip_type = 2
+      )
+    )
+  )
+)
+```
+
+## Column {width=30%}
+
+::: {.card }
+**О сайте**
+
+Данный сайт создан в образовательных целях как демонстрация возможностей **[Quarto Dashboards](https://quarto.org/docs/dashboards/){target="_blank"}** и библиотек 
+
+- {[highcharter](https://jkunst.com/highcharter/){target="_blank"}}
+- {[echarts4r](https://echarts4r.john-coene.com/){target="_blank"}}
+- {[apexcharter](https://dreamrs.github.io/apexcharter/){target="_blank"}}
+- {[reactable](https://glin.github.io/reactable/){target="_blank"}}
+- {[reactablefmtr](https://kcuilla.github.io/reactablefmtr/index.html){target="_blank"}}
+
+языка программирования R на основе HTML-виджетов. Для загрузки финансовых данных использовалась библиотека {[quantmod](https://www.quantmod.com/){target="_blank"}}.
+:::
+
